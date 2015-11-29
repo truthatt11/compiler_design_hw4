@@ -113,12 +113,17 @@ void processProgramNode(AST_NODE *programNode)
     /* var decl, func decl */
     AST_NODE *now = programNode->child;
     while(now != NULL) {
-        if(now->nodeType == DECLARATION_NODE) {
-            if(now->semantic_value.declSemanticValue.kind == FUNCTION_DECL) { /* function declaration */
-            }
-        }
-        else if(now->nodeType == VARIABLE_DECL_LIST_NODE) {
-            ;
+        switch(now->nodeType) {
+            case DECLARATION_NODE:
+                if(now->semantic_value.declSemanticValue.kind == FUNCTION_DECL) { /* function declaration */
+                    processDeclarationNode(now);
+                }else { /* error */ }
+                break;
+            case VARIABLE_DECL_LIST_NODE:
+                processDeclarationNode(now);
+                break;
+            default:
+                /* parsing error */;
         }
         now = now->rightSibling;
     }
@@ -126,6 +131,21 @@ void processProgramNode(AST_NODE *programNode)
 
 void processDeclarationNode(AST_NODE* declarationNode)
 {
+    switch(declarationNode->nodeType) {
+        case DECLARARION_NODE:
+            declareFunction(declarationNode);
+            break;
+        case VARIABLE_DECL_LIST_NODE:
+            AST_NODE* child = declarationNode->child;
+            while(child != NULL) {
+                declareIdList(child, /*TODO*/, 0);
+                child = child->rightSibling;
+            }
+            break;
+        default:
+            /* error */
+            break;
+    }
 }
 
 
