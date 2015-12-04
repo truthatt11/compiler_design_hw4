@@ -70,7 +70,7 @@ SymbolTableEntry* enterSymbol(char* symbolName, SymbolAttribute* attribute)
     SymbolTableEntry* now = symbolTable.hashTable[slot];
 
     if(prev != NULL)
-        if(prev->nestingLevel == level) { /* Duplicate definition */ }
+        if(prev->nestingLevel == level) { /* ERROR: Duplicate definition */ /* TODO*/ }
 
     /* Maintain Hash Table */
     symbolTable.hashTable[slot] = newSymbolTableEntry(level);
