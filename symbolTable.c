@@ -69,14 +69,18 @@ SymbolTableEntry* enterSymbol(char* symbolName, SymbolAttribute* attribute)
     SymbolTableEntry* prev = retrieveSymbol(symbolName);
     SymbolTableEntry* now = symbolTable.hashTable[slot];
 
-    if(prev != NULL)
-        if(prev->nestingLevel == level) { /* ERROR: Duplicate definition */ /* TODO*/ }
+    if(prev != NULL) {
+        if(prev->nestingLevel == level) { /* ERROR: Duplicate definition */
+            return NULL;
+        }
+    }
 
     /* Maintain Hash Table */
     symbolTable.hashTable[slot] = newSymbolTableEntry(level);
     symbolTable.hashTable[slot]->nextInHashChain = now;
-    now->prevInHashChain = symbolTable.hashTable[slot];
+    if(now != NULL) now->prevInHashChain = symbolTable.hashTable[slot];
     now = symbolTable.hashTable[slot];
+    now->name = symbolName;
     now->attribute = attribute;
 
     /* Maintain ScopeDisplay */
@@ -116,7 +120,10 @@ void removeSymbol(char* symbolName)
         temp = scope->prevInHashChain;
         if(temp != NULL)
             temp->nextInHashChain = scope->nextInHashChain;
-        scope->nextInHashChain->prevInHashChain = temp;
+        else
+            symbolTable.hashTable[HASH(symbolName)] = scope->nextInHashChain;
+        if(scope->nextInHashChain != NULL)
+            scope->nextInHashChain->prevInHashChain = temp;
 
         free(scope);
     }
