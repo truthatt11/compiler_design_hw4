@@ -264,6 +264,7 @@ void declareIdList(AST_NODE* declarationNode, SymbolAttributeKind isVariableOrTy
     char* name = declarationNode->semantic_value.identifierSemanticValue.identifierName;
     AST_NODE* now = declarationNode->rightSibling;
     DATA_TYPE datatype;
+    
     if(strcmp(name, "int")==0) { datatype = INT_TYPE; }
     else if(strcmp(name, "float")==0) { datatype = FLOAT_TYPE; }
     attr->attributeKind = VARIABLE_ATTRIBUTE;
@@ -598,14 +599,15 @@ void processVariableLValue(AST_NODE* idNode)
 
 void processVariableRValue(AST_NODE* idNode)
 {
-    int lparam_count = 0;
     if(idNode->nodeType != IDENTIFIER_NODE) { return; }
-    if(idNode->semantic_value.identifierSemanticValue.symbolTableEntry == NULL) {
+    int lparam_count = 0;
+    char* id_name = idNode->semantic_value.identifierSemanticValue.identifierName;
+    SymbolTableEntry* id = retrieveSymbol(id_name);
+
+    if(id == NULL) {
         printErrorMsg(idNode, SYMBOL_UNDECLARED);
     }
     /* Check not type, ID and function OK */
-    char* id_name = idNode->semantic_value.identifierSemanticValue.identifierName;
-    SymbolTableEntry* id = retrieveSymbol(id_name);
     if(id->attribute->attributeKind == TYPE_ATTRIBUTE)
         printErrorMsg(idNode, IS_TYPE_NOT_VARIABLE);
 
