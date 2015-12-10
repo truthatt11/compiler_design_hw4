@@ -769,7 +769,7 @@ char *argv[];
   {
      yyin = fopen(argv[1],"r");
      yyparse();
-     // printGV(prog, NULL);
+     //printGV(prog, NULL);
      
      initializeSymbolTable();
      

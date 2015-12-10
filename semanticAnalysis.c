@@ -302,10 +302,8 @@ void declareFunction(AST_NODE* declarationNode)
     AST_NODE *func_name = declarationNode->rightSibling;
     AST_NODE *para_list = func_name->rightSibling;
     AST_NODE *block_node = para_list->rightSibling;
-    char* name = declarationNode->semantic_value.identifierSemanticValue.identifierName;
+    char* name = declarationNode->rightSibling->semantic_value.identifierSemanticValue.identifierName;
     DATA_TYPE datatype;
-
-    openScope();
 
     if(strcmp(name, "int")==0) { datatype = INT_TYPE; }
     else if(strcmp(name, "float")==0) { datatype = FLOAT_TYPE; }
@@ -313,7 +311,10 @@ void declareFunction(AST_NODE* declarationNode)
     attr->attr.functionSignature = func_sig;
     func_sig->returnType = datatype;
     func_sig->parameterList = NULL;
+    enterSymbol(name, attr);
     
+    openScope();
+
     /* Parameter parsing */
     if(para_list->nodeType == PARAM_LIST_NODE) {
         AST_NODE* para = para_list->child;
@@ -424,6 +425,10 @@ void checkAssignmentStmt(AST_NODE* assignmentNode)
     if(left->nodeType == IDENTIFIER_NODE) {
         char* id_name = left->semantic_value.identifierSemanticValue.identifierName;
         SymbolTableEntry* entry = retrieveSymbol(id_name);
+        if(entry == NULL) {
+            /* variable undeclared */
+            return;
+        }
         SymbolAttribute* attr = entry->attribute;
         if(attr->attributeKind == VARIABLE_ATTRIBUTE) {
             if(attr->attr.typeDescriptor->kind == SCALAR_TYPE_DESCRIPTOR)
@@ -434,6 +439,7 @@ void checkAssignmentStmt(AST_NODE* assignmentNode)
     }
 
     /* Check right const, expr, id */
+//    printf("right->nodeType = %d identifier = %d\n", right->nodeType, IDENTIFIER_NODE);
     switch(right->nodeType) {
         case EXPR_NODE:
             processExprNode(right);
@@ -443,6 +449,15 @@ void checkAssignmentStmt(AST_NODE* assignmentNode)
             break;
         case IDENTIFIER_NODE:
             processVariableRValue(right);
+            break;
+        case STMT_NODE:
+            if(right->semantic_value.stmtSemanticValue.kind == FUNCTION_CALL_STMT) {
+                checkFunctionCall(right->child);
+                if(right->child != NULL) {
+                    /* check return type? */;
+                }
+            }else
+                printErrorMsg(assignmentNode, NOT_ASSIGNABLE);
             break;
         default:
             printErrorMsg(assignmentNode, NOT_ASSIGNABLE);
@@ -486,45 +501,50 @@ void checkWriteFunction(AST_NODE* functionCallNode)
 
 void checkFunctionCall(AST_NODE* functionCallNode)
 {
-    if(strcmp(functionCallNode->semantic_value.identifierSemanticValue.identifierName, "write")==0)
+    char* func_name = functionCallNode->semantic_value.identifierSemanticValue.identifierName;
+    if(strcmp(func_name, "write")==0) {
         checkWriteFunction(functionCallNode);
-    SymbolTableEntry* func = functionCallNode->semantic_value.identifierSemanticValue.symbolTableEntry;
+        return;
+    }
+    SymbolTableEntry* func = retrieveSymbol(func_name);
+//    if(func == NULL) { printErrorMsg(functionCallNode, SYMBOL_UNDECLARED); return; }
     if(func->attribute->attributeKind != FUNCTION_SIGNATURE) { return; }
-    checkParameterPassing(func->attribute->attr.functionSignature->parameterList, functionCallNode->rightSibling->child);
+    checkParameterPassing(func->attribute->attr.functionSignature->parameterList, functionCallNode->rightSibling);
 }
 
 void checkParameterPassing(Parameter* formalParameter, AST_NODE* actualParameter)
 {
+    AST_NODE* actpara = actualParameter->child;
     while(formalParameter != NULL) {
-        if(actualParameter == NULL) { printErrorMsg(actualParameter, TOO_FEW_ARGUMENTS); return; }
+        if(actpara == NULL) { printErrorMsg(actualParameter, TOO_FEW_ARGUMENTS); return; }
         
         switch(formalParameter->type->kind) {
             case SCALAR_TYPE_DESCRIPTOR:
                 /* actualP can be expr const id, no array */
-                if(actualParameter->nodeType == IDENTIFIER_NODE) {
-                    char* id_name = actualParameter->semantic_value.identifierSemanticValue.identifierName;
+                if(actpara->nodeType == IDENTIFIER_NODE) {
+                    char* id_name = actpara->semantic_value.identifierSemanticValue.identifierName;
                     SymbolTableEntry* id = retrieveSymbol(id_name);
                     if(id == NULL) { printErrorMsg(actualParameter, SYMBOL_UNDECLARED); }
                     if(id->attribute->attributeKind == FUNCTION_SIGNATURE) { printErrorMsg(actualParameter, IS_FUNCTION_NOT_VARIABLE); }
-                    if(id->attribute->attributeKind == TYPE_ATTRIBUTE) { printErrorMsg(actualParameter, IS_TYPE_NOT_VARIABLE); }
-                    if(id->attribute->attr.typeDescriptor->kind == ARRAY_TYPE_DESCRIPTOR) {
+                    else if(id->attribute->attributeKind == TYPE_ATTRIBUTE) { printErrorMsg(actualParameter, IS_TYPE_NOT_VARIABLE); }
+                    else if(id->attribute->attr.typeDescriptor->kind == ARRAY_TYPE_DESCRIPTOR) {
                         int para_count = 0, actual_count = id->attribute->attr.typeDescriptor->properties.arrayProperties.dimension;
-                        AST_NODE* temp = actualParameter->child;
+                        AST_NODE* temp = actpara->child;
                         while(temp != NULL) { temp = temp->rightSibling; para_count++;}
                         if(para_count < actual_count) { printErrorMsg(actualParameter, PASS_ARRAY_TO_SCALAR); }
-                        else if(para_count > actual_count) { /* impossible*/ }
+                        else if(para_count > actual_count) { printErrorMsg(actualParameter, INCOMPATIBLE_ARRAY_DIMENSION); }
                     }
                 }
-                if(actualParameter->nodeType == CONST_VALUE_NODE) {}
-                if(actualParameter->nodeType == EXPR_NODE) {}
+                if(actpara->nodeType == CONST_VALUE_NODE) {}
+                if(actpara->nodeType == EXPR_NODE) {}
                 break;
             case ARRAY_TYPE_DESCRIPTOR:
-                if(actualParameter->nodeType != IDENTIFIER_NODE) { printErrorMsg(actualParameter, NOT_ARRAY); }
-                char* id_name = actualParameter->semantic_value.identifierSemanticValue.identifierName;
+                if(actpara->nodeType != IDENTIFIER_NODE) { printErrorMsg(actualParameter, NOT_ARRAY); }
+                char* id_name = actpara->semantic_value.identifierSemanticValue.identifierName;
                 int dim_count = formalParameter->type->properties.arrayProperties.dimension;
                 int para_count = 0;
                 int para_total;
-                AST_NODE* temp = actualParameter->child;
+                AST_NODE* temp = actpara->child;
                 SymbolTableEntry* id = retrieveSymbol(id_name);
                 if(id == NULL) { printErrorMsg(actualParameter, SYMBOL_UNDECLARED); }
                 para_total = id->attribute->attr.typeDescriptor->properties.arrayProperties.dimension;
@@ -537,9 +557,9 @@ void checkParameterPassing(Parameter* formalParameter, AST_NODE* actualParameter
         }
 
         formalParameter = formalParameter->next;
-        actualParameter = actualParameter->rightSibling;
+        actpara = actpara->rightSibling;
     }
-    if(actualParameter != NULL) printErrorMsg(actualParameter, TOO_MANY_ARGUMENTS);
+    if(actpara != NULL) printErrorMsg(actualParameter, TOO_MANY_ARGUMENTS);
 }
 
 
@@ -611,13 +631,17 @@ void processVariableRValue(AST_NODE* idNode)
     if(id->attribute->attributeKind == TYPE_ATTRIBUTE)
         printErrorMsg(idNode, IS_TYPE_NOT_VARIABLE);
 
-    /* Check ID and array element */
-    if(id->attribute->attr.typeDescriptor->kind == ARRAY_TYPE_DESCRIPTOR) {
-        AST_NODE *temp = idNode->child;
-        while(temp != NULL) { lparam_count++; temp = temp->rightSibling; }
-        if(lparam_count < id->attribute->attr.typeDescriptor->properties.arrayProperties.dimension)
-            printErrorMsg(idNode, PASS_ARRAY_TO_SCALAR);
+    /* Check ID and array, function element */
+    if(id->attribute->attributeKind == VARIABLE_ATTRIBUTE) {
+        if(id->attribute->attr.typeDescriptor->kind == ARRAY_TYPE_DESCRIPTOR) {
+            AST_NODE *temp = idNode->child;
+            while(temp != NULL) { lparam_count++; temp = temp->rightSibling; }
+            if(lparam_count < id->attribute->attr.typeDescriptor->properties.arrayProperties.dimension)
+                printErrorMsg(idNode, PASS_ARRAY_TO_SCALAR);
+        }
     }
+    if(id->attribute->attributeKind == FUNCTION_SIGNATURE)
+        checkFunctionCall(idNode);
 }
 
 
@@ -726,6 +750,7 @@ void processDeclDimList(AST_NODE* idNode, TypeDescriptor* typeDescriptor, int ig
             /*TODO*/ /* processExprNode*/
         }
         dim++;
+        dim_value = dim_value->rightSibling;
     }
     typeDescriptor->properties.arrayProperties.dimension = dim;
 }
