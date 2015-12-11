@@ -67,14 +67,19 @@ void printErrorMsgSpecial(AST_NODE* node1, char* name2, ErrorMsgKind errorMsgKin
 {
     g_anyErrorOccur = 1;
     printf("Error found in line %d\n", node1->linenumber);
-    /*
+    
     switch(errorMsgKind)
     {
-    default:
-        printf("Unhandled case in void printErrorMsg(AST_NODE* node, ERROR_MSG_KIND* errorMsgKind)\n");
-        break;
+        case PASS_ARRAY_TO_SCALAR:
+            printf("Pass array %s to scalar %s.\n", node1->semantic_value.identifierSemanticValue.identifierName, name2);
+            break;
+        case PASS_SCALAR_TO_ARRAY:
+            printf("Pass scalar %s ot array %s.\n", node1->semantic_value.identifierSemanticValue.identifierName, name2);
+            break;
+        default:
+            printf("Unhandled case in void printErrorMsg(AST_NODE* node, ERROR_MSG_KIND* errorMsgKind)\n");
+            break;
     }
-    */
 }
 
 
@@ -153,9 +158,6 @@ void printErrorMsg(AST_NODE* node, ErrorMsgKind errorMsgKind)
             break;
         case PASS_ARRAY_TO_SCALAR:
             printf("Pass array to scalar.\n");
-            break;
-        case PASS_SCALAR_TO_ARRAY:
-            printf("Pass scalar ot array.\n");
             break;
         default:
             printf("Unhandled case in void printErrorMsg(AST_NODE* node, ERROR_MSG_KIND* errorMsgKind)\n");
@@ -267,6 +269,15 @@ void declareIdList(AST_NODE* declarationNode, SymbolAttributeKind isVariableOrTy
     
     if(strcmp(name, "int")==0) { datatype = INT_TYPE; }
     else if(strcmp(name, "float")==0) { datatype = FLOAT_TYPE; }
+    else if(strcmp(name, "void")==0) { printErrorMsg(declarationNode, VOID_VARIABLE); return; }
+    else {   /* typedef */
+        SymbolTableEntry* type = retrieveSymbol(name);
+        if(type == NULL) { printErrorMsg(declarationNode, SYMBOL_UNDECLARED); return; }
+        if(type->attribute->attributeKind != TYPE_ATTRIBUTE) { printErrorMsg(declarationNode, SYMBOL_IS_NOT_TYPE); return; }
+        if(type->attribute->attr.typeDescriptor->kind == SCALAR_TYPE_DESCRIPTOR)
+            datatype = type->attribute->attr.typeDescriptor->properties.dataType;
+        else datatype = type->attribute->attr.typeDescriptor->properties.arrayProperties.elementType;
+    }
     attr->attributeKind = VARIABLE_ATTRIBUTE;
     
     while(now != NULL) {
@@ -531,7 +542,7 @@ void checkParameterPassing(Parameter* formalParameter, AST_NODE* actualParameter
                         int para_count = 0, actual_count = id->attribute->attr.typeDescriptor->properties.arrayProperties.dimension;
                         AST_NODE* temp = actpara->child;
                         while(temp != NULL) { temp = temp->rightSibling; para_count++;}
-                        if(para_count < actual_count) { printErrorMsg(actualParameter, PASS_ARRAY_TO_SCALAR); }
+                        if(para_count < actual_count) { printErrorMsgSpecial(actpara, formalParameter->parameterName,  PASS_ARRAY_TO_SCALAR); }
                         else if(para_count > actual_count) { printErrorMsg(actualParameter, INCOMPATIBLE_ARRAY_DIMENSION); }
                     }
                 }
@@ -546,7 +557,11 @@ void checkParameterPassing(Parameter* formalParameter, AST_NODE* actualParameter
                 int para_total;
                 AST_NODE* temp = actpara->child;
                 SymbolTableEntry* id = retrieveSymbol(id_name);
-                if(id == NULL) { printErrorMsg(actualParameter, SYMBOL_UNDECLARED); }
+                if(id == NULL) { printErrorMsg(actualParameter, SYMBOL_UNDECLARED); return; }
+                if(id->attribute->attr.typeDescriptor->kind == SCALAR_TYPE_DESCRIPTOR) {
+                    printErrorMsgSpecial(actpara, formalParameter->parameterName, PASS_SCALAR_TO_ARRAY);
+                    return;
+                }
                 para_total = id->attribute->attr.typeDescriptor->properties.arrayProperties.dimension;
                 while(temp != NULL) {temp=temp->rightSibling; para_count++;}
 
@@ -626,6 +641,7 @@ void processVariableRValue(AST_NODE* idNode)
 
     if(id == NULL) {
         printErrorMsg(idNode, SYMBOL_UNDECLARED);
+        return;
     }
     /* Check not type, ID and function OK */
     if(id->attribute->attributeKind == TYPE_ATTRIBUTE)
@@ -637,7 +653,7 @@ void processVariableRValue(AST_NODE* idNode)
             AST_NODE *temp = idNode->child;
             while(temp != NULL) { lparam_count++; temp = temp->rightSibling; }
             if(lparam_count < id->attribute->attr.typeDescriptor->properties.arrayProperties.dimension)
-                printErrorMsg(idNode, PASS_ARRAY_TO_SCALAR);
+                printErrorMsg(idNode, NOT_ASSIGNABLE);
         }
     }
     if(id->attribute->attributeKind == FUNCTION_SIGNATURE)
@@ -736,6 +752,10 @@ void processDeclDimList(AST_NODE* idNode, TypeDescriptor* typeDescriptor, int ig
     AST_NODE* dim_value = idNode->child;
     typeDescriptor->kind = ARRAY_TYPE_DESCRIPTOR;
     /* TODO ignore_first_dim_size @@ */
+    if(ignoreFirstDimSize) {
+        dim_value = dim_value->rightSibling;
+        dim++;
+    }
     while(dim_value != NULL) {
         if(dim_value->nodeType == CONST_VALUE_NODE) {
             if(dim_value->semantic_value.const1->const_type == INTEGERC) {
@@ -748,6 +768,8 @@ void processDeclDimList(AST_NODE* idNode, TypeDescriptor* typeDescriptor, int ig
             }
         } else if(dim_value->nodeType == EXPR_NODE) {
             /*TODO*/ /* processExprNode*/
+        } else {
+            printErrorMsg(idNode, INCOMPATIBLE_ARRAY_DIMENSION);
         }
         dim++;
         dim_value = dim_value->rightSibling;
